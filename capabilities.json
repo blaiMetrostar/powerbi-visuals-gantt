@@ -25,6 +25,36 @@
             "kind": "Grouping"
         },
         {
+            "name": "Phase1Start",
+            "displayName": "Contract Award Date",
+            "displayNameKey": "Role_ContractAwardDate",
+            "kind": "Grouping"
+        },
+        {
+            "name": "Phase2Start",
+            "displayName": "Design Approved Date",
+            "displayNameKey": "Role_DesignApprovedDate",
+            "kind": "Grouping"
+        },
+        {
+            "name": "Phase3Start",
+            "displayName": "Implementation Completion Date",
+            "displayNameKey": "Role_ImplementationCompletionDate",
+            "kind": "Grouping"
+        },
+        {
+            "name": "Phase3End",
+            "displayName": "Project Closed Date",
+            "displayNameKey": "Role_ProjectClosedDate",
+            "kind": "Grouping"
+        },
+        {
+            "name": "TaskMilestone",
+            "displayName": "Task Milestones",
+            "displayNameKey": "Role_TaskMilestones",
+            "kind": "Grouping"
+        },
+        {
             "name": "EndDate",
             "displayName": "End Date",
             "displayNameKey": "Role_EndDate",
@@ -265,6 +295,31 @@
                         {
                             "for": {
                                 "in": "StartDate"
+                            }
+                        },
+                        { 
+                            "for": { 
+                                "in": "Phase1Start" 
+                            } 
+                        },
+                        { 
+                            "for": { 
+                                "in": "Phase2Start" 
+                            } 
+                        },
+                        { 
+                            "for": { 
+                                "in": "Phase3Start" 
+                            } 
+                        },
+                        { 
+                            "for": { 
+                                "in": "Phase3End" 
+                            } 
+                        },
+                        {
+                            "for": {
+                                "in": "TaskMilestone"
                             }
                         },
                         {
@@ -539,6 +594,90 @@
                 "keepMilestoneSettingsOnFilteringInEditMode": {
                     "type": {
                         "bool": true
+                    }
+                }
+            }
+        },
+        "taskMilestones": {
+            "properties": {
+                "show": { 
+                    "type": { 
+                        "bool": true 
+                    } 
+                },
+                "fill": { 
+                    "type": { 
+                        "fill": { 
+                            "solid": { 
+                                "color": true 
+                            } 
+                        } 
+                    } 
+                },
+                "shapeType": { 
+                    "type": { 
+                        "text": true 
+                    } 
+                },
+                "size": { 
+                    "type": { 
+                        "numeric": true 
+                    }
+                },
+                "labelFontSize": { 
+                    "type": { 
+                        "numeric": true 
+                    }
+                }
+            }
+        },
+        "phase": {
+            "properties": {
+                "show": {
+                    "type": {
+                        "bool": true 
+                    }
+                },
+                "showTitle": {
+                    "type": {
+                        "bool": true 
+                    }
+                },
+                "position": {
+                    "type": {
+                        "text": true 
+                    }
+                },
+                "titleText": {
+                    "type": {
+                        "text": true 
+                    }
+                },
+                "phase1Color": {
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true 
+                            }
+                        }
+                    }
+                },
+                "phase2Color": {
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true 
+                            }
+                        }
+                    }
+                },
+                "phase3Color": {
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
                     }
                 }
             }

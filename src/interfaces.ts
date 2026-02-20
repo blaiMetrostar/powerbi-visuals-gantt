@@ -61,6 +61,13 @@ export interface ExtraInformation {
     value: string;
 }
 
+export interface TaskMilestoneItem {
+    date: Date;
+    label: string;
+    tooltipInfo?: VisualTooltipDataItem[];
+    identity?: powerbi.visuals.ISelectionId;
+}
+
 export interface Task extends SelectableDataPoint {
     index: number;
     name: string;
@@ -83,6 +90,8 @@ export interface Task extends SelectableDataPoint {
     highlight?: boolean;
     Milestones?: Milestone[];
     layer?: number;
+    phaseEndDates?: Date[];
+    taskMilestones?: TaskMilestoneItem[];
 }
 
 export interface Layer {
@@ -107,6 +116,7 @@ export interface GanttViewModel {
     tasks: Task[];
     legendData: LegendData;
     milestoneData: MilestoneData;
+    phaseData: LegendData;
     taskTypes: LegendType;
     isDurationFilled: boolean;
     isEndDateFilled: boolean;

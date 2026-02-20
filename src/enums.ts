@@ -58,6 +58,11 @@ export enum GanttRole {
     Resource = "Resource",
     Milestones = "Milestones",
     ExtraInformation = "ExtraInformation",
+    Phase1Start = "Phase1Start",
+    Phase2Start = "Phase2Start",
+    Phase3Start = "Phase3Start",
+    Phase3End = "Phase3End",
+    TaskMilestone = "TaskMilestone"
 }
 
 export enum MilestoneLineType {

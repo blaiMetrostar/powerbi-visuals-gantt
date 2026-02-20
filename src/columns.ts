@@ -108,4 +108,11 @@ export class GanttColumns<T> {
     public Resource: T = null;
     public ExtraInformation: T = null;
     public Milestones: T = null;
+    public Phase1Start: T = null;
+    public Phase2Start: T = null;
+    public Phase3Start: T = null;
+    public Phase3End: T = null;
+
+    public TaskMilestone: T = null;
+    public DynamicMilestone: T = null;
 }

@@ -76,7 +76,7 @@ export class LegendCardSettings extends CompositeCard implements ISetHighContras
     public show = new ToggleSwitch({
         name: "show",
         displayNameKey: "Visual_Show",
-        value: true
+        value: false
     });
 
     public topLevelSlice = this.show;

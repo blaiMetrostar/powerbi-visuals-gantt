@@ -11,6 +11,7 @@ import { CollapsedTasksCardSettings } from "./cards/task/collapsedTasksCard";
 import { CollapsedTasksUpdateIdCardSettings } from "./cards/task/collapsedTasksUpdateIdCard";
 import { DaysOffCardSettings } from "./cards/daysOffCard";
 import { LegendCardSettings, LegendPropertyIdentifier } from "./cards/legendCard";
+import { TaskMilestonesCardSettings } from "./cards/taskMilestonesCard";
 import { MilestonesCardSettings, MilestonesPropertyIdentifier } from "./cards/milestonesCard";
 import { TaskLabelsCardSettings } from "./cards/task/taskLabelsCard";
 import { TaskCompletionCardSettings } from "./cards/task/taskCompletionCard";
@@ -20,6 +21,7 @@ import { TaskResourceCardSettings, TaskResourcePropertyIdentifier } from "./card
 import { SubTasksCardSettings } from "./cards/task/subTasksCard";
 import { DateTypeCardSettings } from "./cards/dateTypeCard";
 import { BackgroundCardSettings } from "./cards/backgroundCard";
+import { PhaseCardSettings } from "./cards/phaseCard";
 
 import { GanttViewModel, MilestoneDataPoint } from "../interfaces";
 import { Gantt } from "../gantt";
@@ -31,6 +33,7 @@ export class GanttChartSettingsModel extends Model {
     collapsedTasksUpdateId = new CollapsedTasksUpdateIdCardSettings();
     daysOff = new DaysOffCardSettings();
     legend = new LegendCardSettings();
+    taskMilestones = new TaskMilestonesCardSettings();
     milestones = new MilestonesCardSettings();
     taskLabels = new TaskLabelsCardSettings();
     taskCompletion = new TaskCompletionCardSettings();
@@ -40,6 +43,7 @@ export class GanttChartSettingsModel extends Model {
     dateType = new DateTypeCardSettings();
     background = new BackgroundCardSettings();
     subtasks = new SubTasksCardSettings();
+    phase = new PhaseCardSettings();
 
     cards = [
         this.general,
@@ -47,7 +51,9 @@ export class GanttChartSettingsModel extends Model {
         this.collapsedTasksUpdateId,
         this.daysOff,
         this.legend,
+        this.taskMilestones,
         this.milestones,
+        this.phase,
         this.taskLabels,
         this.taskCompletion,
         this.tooltipConfig,
@@ -85,6 +91,13 @@ export class GanttChartSettingsModel extends Model {
                     }
 
                     this.legend.populateColors(dataPoints, localizationManager, colorHelper);
+                    break;
+                }
+
+                case "phase": {
+                    this.phase.phase1Color.visible = true;
+                    this.phase.phase2Color.visible = true;
+                    this.phase.phase3Color.visible = true;
                     break;
                 }
 

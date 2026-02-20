@@ -99,7 +99,8 @@ import {
     LegendGroup,
     LegendType,
     Layer,
-    UniqueMilestones
+    UniqueMilestones,
+    TaskMilestoneItem
 } from "./interfaces";
 import { DurationHelper } from "./durationHelper";
 import { GanttColumns } from "./columns";
@@ -198,6 +199,7 @@ const GanttDurationUnitType = [
     DurationUnit.Hour,
     DurationUnit.Day,
 ];
+const TaskMilestoneType: string = "Task Milestone";
 
 export class SortingOptions {
     isCustomSortingNeeded: boolean;
@@ -228,6 +230,12 @@ interface CreateTasksDto {
     isEndDateFilled: boolean;
     hasHighlights: boolean;
     sortingOptions: SortingOptions;
+}
+
+interface MilestoneLabelDatum {
+    key: string;
+    task: Task;
+    milestone: TaskMilestoneItem;
 }
 
 export class Gantt implements IVisual {
@@ -264,6 +272,7 @@ export class Gantt implements IVisual {
     private colors: IColorPalette;
     private colorHelper: ColorHelper;
     private legend: ILegend;
+    private phaseLegend: ILegend;
 
     private textProperties: TextProperties = {
         fontFamily: "wf_segoe-ui_normal",
@@ -365,6 +374,7 @@ export class Gantt implements IVisual {
     private lineGroupWrapper: d3Selection<SVGRectElement, null, null, undefined>;
     private lineGroupWrapperRightBorder: d3Selection<SVGRectElement, null, null, undefined>;
     private ganttDiv: d3Selection<HTMLDivElement, null, null, undefined>;
+    private taskMilestoneLabelLayer: d3Selection<SVGGElement, null, null, undefined>;
     private behavior: Behavior;
     private eventService: IVisualEventService;
     private tooltipServiceWrapper: ITooltipServiceWrapper;
@@ -449,6 +459,11 @@ export class Gantt implements IVisual {
             .classed(Gantt.CollapseAll.className, true)
             .attr("fill", "none");
 
+        this.taskMilestoneLabelLayer = this.ganttSvg
+            .append("g")
+            .classed("task-milestone-label-layer", true)
+            .style("pointer-events", "none");
+
         this.axisBackground = this.axisGroup
             .append("rect")
             .classed(Gantt.AxisBackground.className, true)
@@ -485,6 +500,12 @@ export class Gantt implements IVisual {
 
         // create legend container
         this.legend = createLegend(
+            element,
+            false,
+            LegendPosition.Top);
+        
+        // create phase legend container
+        this.phaseLegend = createLegend(
             element,
             false,
             LegendPosition.Top);
@@ -628,6 +649,10 @@ export class Gantt implements IVisual {
 
         this.chartGroup
             .selectAll(Gantt.SingleTask.selectorName)
+            .remove();
+
+        this.taskMilestoneLabelLayer
+            .selectAll("*")
             .remove();
     }
 
@@ -916,24 +941,30 @@ export class Gantt implements IVisual {
         return milestonesWithoutDuplicates;
     }
 
-
     private static createMilestones(
         dataView: DataView,
         host: IVisualHost,
         viewMode: powerbi.ViewMode,
         settingsState: SettingsState,
-        keepSettingsOnFiltering: boolean): MilestoneData {
+        keepSettingsOnFiltering: boolean
+    ): MilestoneData {
         let milestonesIndex = -1;
+        let taskMilestoneCategory: DataViewCategoryColumn = null;
+
         for (const index in dataView.categorical.categories) {
             const category = dataView.categorical.categories[index];
             if (category.source.roles.Milestones) {
                 milestonesIndex = +index;
+            }
+            if (category.source.roles[GanttRole.TaskMilestone]) {
+                taskMilestoneCategory = category;
             }
         }
 
         const milestoneData: MilestoneData = {
             dataPoints: []
         };
+
         const milestonesCategory = dataView.categorical.categories[milestonesIndex];
         const milestones: { value: PrimitiveValue, index: number }[] = [];
         const shouldUseSettingsFromPersistProps: boolean = viewMode === powerbi.ViewMode.View || keepSettingsOnFiltering;
@@ -958,23 +989,39 @@ export class Gantt implements IVisual {
                 if (!cachedShapes[value]) {
                     const savedShape = settingsState.getMilestoneSettings(value)?.milestones?.shapeType as (MilestoneShape | undefined);
                     cachedShapes[value] = savedShape ?? allShapes[(prevShapeIndex + 1) % allShapes.length];
-                    prevShapeIndex++
+                    prevShapeIndex++;
                 }
                 if (!cachedColors[value]) {
                     const savedColor = (settingsState.getMilestoneSettings(value)?.milestones as any)?.fill?.solid?.color;
                     cachedColors[value] = savedColor ?? host.colorPalette.getColor(value).value;
                 }
-                const milestoneDataPoint: MilestoneDataPoint = {
+
+                milestoneData.dataPoints.push({
                     name: value,
                     identity: selectionBuilder.createSelectionId(),
-                    shapeType: milestoneObjects?.milestones?.shapeType ?
-                        milestoneObjects.milestones.shapeType as string : cachedShapes[value],
-                    color: milestoneObjects?.milestones?.fill ?
-                        (milestoneObjects.milestones as any).fill.solid.color : cachedColors[value],
-                };
-                milestoneData.dataPoints.push(milestoneDataPoint);
+                    shapeType: milestoneObjects?.milestones?.shapeType
+                        ? milestoneObjects.milestones.shapeType as string
+                        : cachedShapes[value],
+                    color: milestoneObjects?.milestones?.fill
+                        ? (milestoneObjects.milestones as any).fill.solid.color
+                        : cachedColors[value],
+                });
             });
+        }
 
+        // Ensure a default milestone type exists for TaskMilestone dates
+        if (taskMilestoneCategory && !milestoneData.dataPoints.some(dp => dp.name === TaskMilestoneType)) {
+            const identity = host
+                .createSelectionIdBuilder()
+                .withCategory(taskMilestoneCategory, 0)
+                .createSelectionId();
+
+            milestoneData.dataPoints.push({
+                name: TaskMilestoneType,
+                identity,
+                shapeType: MilestoneShape.Rhombus,
+                color: host.colorPalette.getColor(TaskMilestoneType).value
+            });
         }
 
         return milestoneData;
@@ -1003,7 +1050,7 @@ export class Gantt implements IVisual {
             sortingOptions
         } = createTasksDto;
 
-        let { taskColor } = createTasksDto
+        let { taskColor } = createTasksDto;
 
         const categoricalValues: DataViewValueColumns = dataView?.categorical?.values;
 
@@ -1188,6 +1235,75 @@ export class Gantt implements IVisual {
         const startDate: Date = (values.StartDate && values.StartDate[index]
             && isValidDate(new Date(values.StartDate[index])) && new Date(values.StartDate[index]))
             || new Date(Date.now());
+        
+        const taskMilestoneRaw = values.TaskMilestone && values.TaskMilestone[index];
+        const dynamicMilestoneRaw = values.DynamicMilestone && values.DynamicMilestone[index];
+        const taskMilestones: TaskMilestoneItem[] = [];
+
+        // Helper function to parse milestone data
+        const parseMilestoneData = (raw: any) => {
+            const milestones: TaskMilestoneItem[] = [];
+            
+            if (typeof raw === "string") {
+                const parts = raw.split("|").map(s => s.trim()).filter(Boolean);
+                for (let i = 0; i + 1 < parts.length; i += 2) {
+                    const label = parts[i];
+                    const dateText = parts[i + 1];
+                    const date = isValidDate(new Date(dateText)) ? new Date(dateText) : null;
+
+                    if (date) {
+                        milestones.push({
+                            date,
+                            label,
+                            tooltipInfo: [{
+                                displayName: label,
+                                value: label
+                            }]
+                        });
+                    }
+                }
+            } else if (raw && isValidDate(new Date(raw))) {
+                milestones.push({
+                    date: new Date(raw),
+                    label: "Milestone",
+                    tooltipInfo: [{
+                        displayName: "Milestone",
+                        value: "Milestone"
+                    }]
+                });
+            }
+            
+            return milestones;
+        };
+
+        if (dynamicMilestoneRaw) {
+            taskMilestones.push(...parseMilestoneData(dynamicMilestoneRaw));
+        } else if (taskMilestoneRaw) {
+            taskMilestones.push(...parseMilestoneData(taskMilestoneRaw));
+        }
+        
+
+        const phaseEndDates: Date[] = [];
+        const rawPhaseCols = [
+            values.Phase1Start && values.Phase1Start[index],
+            values.Phase2Start && values.Phase2Start[index],
+            values.Phase3Start && values.Phase3Start[index],
+            values.Phase3End && values.Phase3End[index],
+        ];
+
+        rawPhaseCols.forEach((raw) => {
+            if (raw != null) {
+                const parsed = new Date(raw);
+                if (isValidDate(parsed)) {
+                    phaseEndDates.push(parsed);
+                }
+            }
+        });
+
+        // normalize: keep only dates strictly after start and <= end, sort ascending
+        const normalizedPhaseEndDates = phaseEndDates
+            .filter(d => d.getTime() > startDate.getTime())
+            .sort((a, b) => a.getTime() - b.getTime());
 
         const extraInformation: ExtraInformation[] = this.getExtraInformationFromValues(values, index);
 
@@ -1210,6 +1326,7 @@ export class Gantt implements IVisual {
             visibility: true,
             duration,
             taskType: taskType && taskType.legendName,
+            taskMilestones,
             description: categoryValue as string,
             tooltipInfo: [],
             selected: false,
@@ -1224,7 +1341,8 @@ export class Gantt implements IVisual {
                 tooltipInfo: null,
                 category: categoryValue as string
             }] : [],
-            highlight: highlight !== null
+            highlight: highlight !== null,
+            phaseEndDates: normalizedPhaseEndDates
         };
 
         return { taskParentName, milestone: milestoneType, startDate, extraInformation, highlight, task };
@@ -1247,7 +1365,7 @@ export class Gantt implements IVisual {
         let stepDurationTransformation: number = 0;
         let endDate: Date;
 
-        const taskProgressShow: boolean = this.formattingSettings.taskCompletion.show.value;
+        //const taskProgressShow: boolean = this.formattingSettings.taskCompletion.show.value;
 
         if (groupValues) {
             groupValues.forEach((group: GanttColumns<DataViewValueColumn>) => {
@@ -1275,8 +1393,11 @@ export class Gantt implements IVisual {
                     }
 
                     completion = ((group.Completion && group.Completion.values[index])
-                        && taskProgressShow
-                        && Gantt.convertToDecimal(group.Completion.values[index] as number, this.formattingSettings.taskCompletion.maxCompletion.value, maxCompletionFromTasks)) || null;
+                        && Gantt.convertToDecimal(
+                            group.Completion.values[index] as number,
+                            this.formattingSettings.taskCompletion.maxCompletion.value,
+                            maxCompletionFromTasks
+                        )) || null;
 
                     if (completion !== null) {
                         if (completion < Gantt.CompletionMin) {
@@ -1303,8 +1424,11 @@ export class Gantt implements IVisual {
                     }
 
                     completion = ((group.Completion && group.Completion.values[index])
-                        && taskProgressShow
-                        && Gantt.convertToDecimal(group.Completion.values[index] as number, this.formattingSettings.taskCompletion.maxCompletion.value, maxCompletionFromTasks)) || null;
+                        && Gantt.convertToDecimal(
+                            group.Completion.values[index] as number,
+                            this.formattingSettings.taskCompletion.maxCompletion.value,
+                            maxCompletionFromTasks
+                        )) || null;
 
                     if (completion !== null) {
                         if (completion < Gantt.CompletionMin) {
@@ -1661,6 +1785,44 @@ export class Gantt implements IVisual {
 
         const tasks: Task[] = this.createTasks({ dataView, taskTypes: legendTypes, formatters, taskColor, isEndDateFilled, hasHighlights: this.hasHighlights, sortingOptions });
 
+        // After creating tasks but before returning the view model:
+        const hasPhaseData = this.hasAnyPhaseData(tasks);
+
+        let phaseData: LegendData = null;
+        if (hasPhaseData && this.formattingSettings.phase.show.value) {
+            const phaseSettings = this.formattingSettings.phase;
+            const generalSettings = phaseSettings.general;
+            
+            phaseData = {
+                dataPoints: [
+                    {
+                        label: "Survey And Engineering",
+                        color: phaseSettings.phase1Color.value.value,
+                        selected: false,
+                        identity: this.host.createSelectionIdBuilder().createSelectionId()
+                    },
+                    {
+                        label: "Implementation",
+                        color: phaseSettings.phase2Color.value.value,
+                        selected: false,
+                        identity: this.host.createSelectionIdBuilder().createSelectionId()
+                    },
+                    {
+                        label: "Close-Out",
+                        color: phaseSettings.phase3Color.value.value,
+                        selected: false,
+                        identity: this.host.createSelectionIdBuilder().createSelectionId()
+                    }
+                ],
+                title: generalSettings.showTitle.value ? generalSettings.titleText.value : null,
+                fontSize: generalSettings.fontSize.value,
+                fontFamily: generalSettings.fontFamily.value,
+                fontStyle: generalSettings.italic.value ? "italic" : "normal",
+                fontWeight: generalSettings.bold.value ? "bold" : "normal",
+                textDecoration: generalSettings.underline.value ? "underline" : "none"
+            };
+        }
+
         legendData.dataPoints = legendData?.dataPoints?.map((legendItem) => {
             legendItem.label = legendItem.label || this.formattingSettings.legend.general.emptyLabelText.value;
             return legendItem;
@@ -1671,6 +1833,7 @@ export class Gantt implements IVisual {
             tasks,
             legendData,
             milestoneData,
+            phaseData,
             isDurationFilled,
             isEndDateFilled: isEndDateFilled,
             isParentFilled,
@@ -1732,6 +1895,10 @@ export class Gantt implements IVisual {
         return !!highlightsExist;
     }
 
+    private hasAnyPhaseData(tasks: Task[]): boolean {
+        return tasks.some(task => task.phaseEndDates && task.phaseEndDates.length > 0);
+    }    
+
     /**
      * Get legend data, calculate position and draw it
      */
@@ -1773,6 +1940,50 @@ export class Gantt implements IVisual {
                 this.viewport.height -= this.legend.getMargins().height;
                 break;
         }
+    }
+
+    private renderPhaseLegend(): void {
+        if (!this.viewModel.phaseData?.dataPoints?.length || !this.formattingSettings.phase.show.value) {
+            this.clearPhaseLegend();
+            return;
+        }
+
+        const settings = this.formattingSettings.phase.general;
+        const position: string | LegendPosition = LegendPosition[settings.position.value.value];
+
+        this.phaseLegend.changeOrientation(position as LegendPosition);
+        this.phaseLegend.drawLegend(this.viewModel.phaseData, structuredClone(this.viewport));
+
+        this.body
+            .selectAll(Gantt.LegendItems.selectorName)
+            .style("font-size", PixelConverter.fromPoint(settings.fontSize.value))
+            .style("font-family", settings.fontFamily.value)
+            .style("font-weight", settings.bold.value ? "bold" : "normal")
+            .style("font-style", settings.italic.value ? "italic" : "normal")
+            .style("text-decoration", settings.underline.value ? "underline" : "none");
+
+        LegendModule.positionChartArea(this.ganttDiv, this.phaseLegend);
+
+        switch (this.phaseLegend.getOrientation()) {
+            case LegendPosition.Left:
+            case LegendPosition.LeftCenter:
+            case LegendPosition.Right:
+            case LegendPosition.RightCenter:
+                this.viewport.width -= this.phaseLegend.getMargins().width;
+                break;
+            case LegendPosition.Top:
+            case LegendPosition.TopCenter:
+            case LegendPosition.Bottom:
+            case LegendPosition.BottomCenter:
+                this.viewport.height -= this.phaseLegend.getMargins().height;
+                break;
+        }
+    }
+
+    private clearPhaseLegend(): void {
+        const emptyData: LegendData = { dataPoints: [] };
+        this.phaseLegend.changeOrientation(LegendPosition.None);
+        this.phaseLegend.drawLegend(emptyData, structuredClone(this.viewport));
     }
 
     private scaleAxisLength(axisLength: number): number {
@@ -1862,6 +2073,7 @@ export class Gantt implements IVisual {
         const settings = this.formattingSettings;
 
         this.renderLegend();
+        this.renderPhaseLegend();
         this.updateChartSize();
 
         const visibleTasks = this.viewModel.tasks
@@ -2902,11 +3114,19 @@ export class Gantt implements IVisual {
         const taskSelection = this.taskSelectionRectRender(taskGroupSelectionMerged, shouldRenderLines);
         this.taskMainRectRender(taskSelection, taskConfigHeight, generalBarsRoundedCorners, this.formattingSettings.taskConfig);
         this.MilestonesRender(taskSelection, taskConfigHeight);
-        this.taskProgressRender(taskSelection);
+        this.renderTaskPhaseGradients(taskSelection);
+        this.renderTaskMilestones(taskSelection);
+        this.taskProgressRender(groupedTasks);
         this.taskDaysOffRender(taskSelection, taskConfigHeight);
         this.taskResourceRender(taskSelection, taskConfigHeight, objects);
 
-        this.renderTooltip(taskSelection);
+        const taskMilestonesEnabled = this.formattingSettings.taskMilestones.show.value;
+        if (!taskMilestonesEnabled) {
+            this.renderTooltip(taskSelection.selectAll(Gantt.TaskRect.selectorName) as any);
+        }
+
+        // Move all grid line rects to bottom so milestones render on top
+        this.taskGroup.selectAll<SVGRectElement, any>("rect.task-rect").lower();
     }
 
 
@@ -3071,6 +3291,7 @@ export class Gantt implements IVisual {
         taskSettings: TaskConfigCardSettings
     ): void {
         const highContrastModeTaskRectStroke: number = 1;
+        //const taskProgressShow: boolean = this.formattingSettings.taskCompletion.show.value;
 
         const taskRect = taskSelection
             .selectAll<SVGPathElement, Task>(Gantt.TaskRect.selectorName)
@@ -3081,7 +3302,7 @@ export class Gantt implements IVisual {
             .append("path")
             .merge(taskRect);
 
-        taskRectMerged.classed(Gantt.TaskRect.className, true)
+        taskRectMerged.classed(Gantt.TaskRect.className, true);
 
         let index = 0, groupedTaskIndex = 0;
         taskRectMerged
@@ -3103,7 +3324,7 @@ export class Gantt implements IVisual {
             })
             .style("stroke", (task: Task) => {
                 if (!task.color) {
-                    return task.color
+                    return task.color;
                 }
 
                 const parsedColor = parseColorString(task.color);
@@ -3118,12 +3339,13 @@ export class Gantt implements IVisual {
                 .style("stroke-width", taskSettings.border.width.value || highContrastModeTaskRectStroke);
         }
 
+        // Accessibility attributes for the path (stroke)
         taskRectMerged.each(function (d: Task) {
             const node = d3Select(this);
             const width = Number(node.attr("width"));
             if (isNaN(width) || width === 0) {
                 node.attr("focusable", null);
-                node.attr("tabindex", null)
+                node.attr("tabindex", null);
                 node.attr("role", null);
                 node.attr("aria-label", null);
             } else {
@@ -3347,20 +3569,73 @@ export class Gantt implements IVisual {
     }
 
     /**
-     * Render task progress rect
+     * Render task progress bars
      * @param taskSelection Task Selection
      */
-    private taskProgressRender(
+    private taskProgressRender(groupedTasks: GroupedTask[]): void {
+        const taskProgressShow: boolean = this.formattingSettings.taskCompletion.show.value;
+        const taskConfigHeight: number = this.formattingSettings.taskConfig.height.value || DefaultChartLineHeight;
+        const barHeight = Gantt.getBarHeight(taskConfigHeight);
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        const self = this;
+
+        const tasks = groupedTasks.flatMap(group => group.tasks);
+
+        const completionLayer = this.chartGroup
+            .selectAll<SVGGElement, null>("g.task-completion-layer")
+            .data([null]);
+
+        const completionLayerMerged = completionLayer
+            .enter()
+            .append("g")
+            .classed("task-completion-layer", true)
+            .merge(completionLayer);
+
+        const completionBars = completionLayerMerged
+            .selectAll<SVGRectElement, Task>("rect.task-completion-bar")
+            .data(tasks, (d: Task) => d.index?.toString() ?? d.name);
+
+        completionBars.exit().remove();
+
+        const completionBarsMerged = completionBars
+            .enter()
+            .append("rect")
+            .classed("task-completion-bar", true)
+            .merge(completionBars);
+
+        completionBarsMerged
+            .attr("x", (d: Task) => {
+                const taskWidth = self.getTaskRectWidth(d);
+                const progressPercent = self.getDaysOffTaskProgressPercent(d);
+                const completionX = Gantt.TimeScale(d.start) + (taskWidth * progressPercent);
+                return completionX - 1;
+            })
+            .attr("y", (d: Task) => self.getTaskYCoordinateWithLayer(d, taskConfigHeight))
+            .attr("width", 2)
+            .attr("height", barHeight)
+            .style("fill", "#000000")
+            .style("opacity", "0.7")
+            .style("display", (d: Task) => {
+                const progressPercent = self.getDaysOffTaskProgressPercent(d);
+                const shouldShow = taskProgressShow
+                    && progressPercent != null
+                    && !isNaN(progressPercent)
+                    && progressPercent > 0
+                    && progressPercent < 1;
+                return shouldShow ? null : "none";
+            })
+            .style("pointer-events", "none");
+    }
+
+    private renderTaskPhaseGradients(
         taskSelection: d3Selection<SVGGElement, Task, SVGGElement | BaseType, Layer>
     ): void {
-        const taskProgressShow: boolean = this.formattingSettings.taskCompletion.show.value;
+        const showPhases: boolean = this.formattingSettings.phase.show.value;
 
         let index = 0, groupedTaskIndex = 0;
         const taskProgress = taskSelection
             .selectAll<SVGLinearGradientElement, { key: string; values: LinearStop[]; }>(Gantt.TaskProgress.selectorName)
             .data((d: Task) => {
-                const taskProgressPercentage = this.getDaysOffTaskProgressPercent(d);
-                // logic used for grouped tasks, when there are several bars related to one category
                 if (index === d.index) {
                     groupedTaskIndex++;
                 } else {
@@ -3371,13 +3646,51 @@ export class Gantt implements IVisual {
                 const url = `${d.index}-${groupedTaskIndex}-${isStringNotNullEmptyOrUndefined(d.taskType) ? d.taskType.toString() : "taskType"}`;
                 const encodedUrl = `task${hashCode(url)}`;
 
+                const startTime = d.start ? d.start.getTime() : Date.now();
+                const endTime = d.end ? d.end.getTime() : (startTime + 1);
+                const total = Math.max(1, endTime - startTime);
+
+                const phaseDates = d.phaseEndDates || [];
+                const hasPhases = showPhases && phaseDates.length > 0;
+                const boundaries = phaseDates
+                    .map(dt => (dt.getTime() - startTime) / total)
+                    .filter(f => f > 0 && f < 1)
+                    .sort((a, b) => a - b);
+
+                const phaseSettings = showPhases ? this.formattingSettings.phase : null;
+                const phaseColors = hasPhases ? [
+                    d.color || this.formattingSettings.taskConfig.fill.value.value,
+                    phaseSettings?.phase1Color?.value?.value,
+                    phaseSettings?.phase2Color?.value?.value,
+                    phaseSettings?.phase3Color?.value?.value
+                ] : [];
+
+                const segPoints: number[] = hasPhases ? [...boundaries, 1] : [1];
+
+                let prev = 0;
+                const linearStops: LinearStop[] = [];
+
+                for (let s = 0; s < segPoints.length; s++) {
+                    const segStart = prev;
+                    const segEnd = segPoints[s];
+                    const color = hasPhases
+                        ? (phaseColors[s] || d.color || this.formattingSettings.taskConfig.fill.value.value)
+                        : (d.color || this.formattingSettings.taskConfig.fill.value.value);
+
+                    linearStops.push({ completion: segStart, color });
+                    linearStops.push({ completion: segEnd, color });
+                    prev = segEnd;
+                }
+
+                if (linearStops.length === 0) {
+                    const fallbackColor = d.color || this.formattingSettings.taskConfig.fill.value.value;
+                    linearStops.push({ completion: 0, color: fallbackColor });
+                    linearStops.push({ completion: 1, color: fallbackColor });
+                }
+
                 return [{
-                    key: encodedUrl, values: <LinearStop[]>[
-                        { completion: 0, color: d.color },
-                        { completion: taskProgressPercentage, color: d.color },
-                        { completion: taskProgressPercentage, color: d.color },
-                        { completion: 1, color: d.color }
-                    ]
+                    key: encodedUrl,
+                    values: <LinearStop[]>linearStops
                 }];
             });
 
@@ -3394,17 +3707,346 @@ export class Gantt implements IVisual {
         const stopsSelection = taskProgressMerged.selectAll("stop");
         const stopsSelectionData = stopsSelection.data(gradient => <LinearStop[]>gradient.values);
 
-        // draw 4 stops: 1st and 2d stops are for completed rect part; 3d and 4th ones -  for main rect
         stopsSelectionData.enter()
             .append("stop")
             .merge(<any>stopsSelection)
             .attr("offset", (data: LinearStop) => `${data.completion * 100}%`)
             .attr("stop-color", (data: LinearStop) => this.colorHelper.getHighContrastColor("foreground", data.color))
-            .attr("stop-opacity", (_: LinearStop, index: number) => (index > 1) && taskProgressShow ? Gantt.NotCompletedTaskOpacity : Gantt.TaskOpacity);
+            .attr("stop-opacity", 1);
 
-        taskProgress
-            .exit()
-            .remove();
+        taskProgress.exit().remove();
+    }
+
+    private renderTaskMilestones(
+        taskSelection: d3Selection<SVGGElement, Task, SVGGElement | BaseType, Layer>
+    ): void {
+        const taskConfigHeight: number = this.formattingSettings.taskConfig.height.value || DefaultChartLineHeight;
+        const barHeight = Gantt.getBarHeight(taskConfigHeight);
+        const taskMilestonesSettings = this.formattingSettings.taskMilestones;
+        const milestoneSize = taskMilestonesSettings.size.value || 8;
+        const show = taskMilestonesSettings.show.value;
+        const labelData: MilestoneLabelDatum[] = [];
+        const getMilestoneKey = (task: Task, milestone: TaskMilestoneItem, index?: number): string => {
+            const taskKey = task.index != null ? task.index.toString() : task.name;
+            const indexKey = index != null ? index.toString() : "0";
+            const labelKey = milestone.label || "milestone";
+            return `${taskKey}-${milestone.date.getTime()}-${indexKey}-${labelKey}`;
+        };
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        const self = this;
+
+        const stackGap = 4;
+        const stackLabelsForTask = (task: Task): void => {
+            const visibleLabels = self.taskMilestoneLabelLayer
+                .selectAll<SVGTextElement, MilestoneLabelDatum>("text.task-milestone-label")
+                .filter((ld: MilestoneLabelDatum) => ld.task === task)
+                .filter(function () {
+                    return d3Select(this).classed("is-visible");
+                });
+
+            const nodes = visibleLabels.nodes();
+            if (!nodes.length) {
+                return;
+            }
+
+            // Sort by date descending (newest first)
+            const ordered = nodes
+                .map((node) => ({
+                    node,
+                    data: d3Select(node).datum() as MilestoneLabelDatum
+                }))
+                .sort((a, b) => b.data.milestone.date.getTime() - a.data.milestone.date.getTime());
+
+            // Calculate base Y position once
+            const baseY = self.getTaskYCoordinateWithLayer(task, taskConfigHeight)
+                + (barHeight - milestoneSize) / 2
+                - 5;
+
+            // Collect all positioning updates
+            const updates: Array<{
+                key: string;
+                newY: number;
+                bgX: number;
+                bgY: number;
+                textWidth: number;
+                textHeight: number;
+                textNode: any;
+            }> = [];
+
+            let cumulativeOffset = 0;
+            
+            ordered.forEach(({ node, data }) => {
+                const textSel = d3Select(node);
+                const newY = baseY - cumulativeOffset;
+                
+                const fontSize = parseFloat(textSel.style("font-size"));
+                const textAnchor = textSel.attr("text-anchor");
+                const textX = parseFloat(textSel.attr("x"));
+                const textWidth = (node as SVGTextElement).getComputedTextLength();
+                const textHeight = fontSize * 1.2;
+                
+                let bgX = textX;
+                if (textAnchor === "middle") {
+                    bgX = textX - (textWidth / 2);
+                } else if (textAnchor === "end") {
+                    bgX = textX - textWidth;
+                }
+                
+                const bgY = newY - textHeight + (fontSize * 0.2);
+                
+                updates.push({
+                    key: data.key,
+                    newY,
+                    bgX,
+                    bgY,
+                    textWidth,
+                    textHeight,
+                    textNode: node
+                });
+                
+                cumulativeOffset += textHeight + stackGap;
+            });
+
+            // Now apply all updates at once
+            updates.forEach(update => {
+                // Update label position
+                d3Select(update.textNode).attr("y", update.newY);
+                
+                // Update background
+                self.taskMilestoneLabelLayer
+                    .selectAll<SVGRectElement, MilestoneLabelDatum>("rect.task-milestone-label-bg")
+                    .filter((bd: MilestoneLabelDatum) => bd.key === update.key)
+                    .attr("x", update.bgX - 4)
+                    .attr("y", update.bgY - 2)
+                    .attr("width", update.textWidth + 8)
+                    .attr("height", update.textHeight + 4)
+                    .attr("rx", 3)
+                    .classed("is-visible", true)
+                    .style("opacity", 1);
+            });
+
+            // Raise all backgrounds and text for this task AFTER positioning
+            updates.forEach(update => {
+                const bgNode = self.taskMilestoneLabelLayer
+                    .selectAll<SVGRectElement, MilestoneLabelDatum>("rect.task-milestone-label-bg")
+                    .filter((bd: MilestoneLabelDatum) => bd.key === update.key);
+                
+                bgNode.raise();
+                d3Select(update.textNode).raise();
+            });
+        };
+
+        const setVisibleLabelsForTask = (task: Task, keys: Set<string>): void => {
+            const labels = self.taskMilestoneLabelLayer
+                .selectAll<SVGTextElement, MilestoneLabelDatum>("text.task-milestone-label")
+                .filter((ld: MilestoneLabelDatum) => ld.task === task);
+
+            labels
+                .classed("is-visible", (d: MilestoneLabelDatum) => keys.has(d.key))
+                .style("opacity", (d: MilestoneLabelDatum) => keys.has(d.key) ? 1 : 0);
+
+            const backgrounds = self.taskMilestoneLabelLayer
+                .selectAll<SVGRectElement, MilestoneLabelDatum>("rect.task-milestone-label-bg")
+                .filter((ld: MilestoneLabelDatum) => ld.task === task);
+
+            backgrounds
+                .classed("is-visible", (d: MilestoneLabelDatum) => keys.has(d.key))
+                .style("opacity", (d: MilestoneLabelDatum) => keys.has(d.key) ? 1 : 0);
+        };
+
+        taskSelection.each(function (task: Task) {
+            const milestones = (task.taskMilestones || []).filter(m => m?.date && isValidDate(m.date));
+            const milestoneKeys = new Map<TaskMilestoneItem, string>();
+            milestones.forEach((milestone, index) => {
+                milestoneKeys.set(milestone, getMilestoneKey(task, milestone, index));
+            });
+            const milestoneGroup = d3Select(this)
+                .selectAll<SVGGElement, Task>("g.task-milestone-layer")
+                .data([task]);
+
+            const milestoneGroupMerged = milestoneGroup.enter()
+                .append("g")
+                .classed("task-milestone-layer", true)
+                .style("position", "relative")
+                .style("z-index", 1000)
+                .merge(milestoneGroup);
+
+            const milestoneSelection = milestoneGroupMerged
+                .selectAll<SVGPathElement, TaskMilestoneItem>("path.task-milestone-diamond")
+                .data(show ? milestones : [], (d: TaskMilestoneItem, i: number) =>
+                    milestoneKeys.get(d) ?? getMilestoneKey(task, d, i)
+                );
+
+            milestoneSelection.exit().remove();
+
+            const milestoneEnter = milestoneSelection
+                .enter()
+                .append("path")
+                .classed("task-milestone-diamond", true);
+
+            const shape = taskMilestonesSettings.shapeType.value.value as MilestoneShape;
+            const path = shape === MilestoneShape.Rhombus
+                ? drawDiamond(milestoneSize)
+                : shape === MilestoneShape.Square
+                    ? drawRectangle(milestoneSize)
+                    : drawCircle(milestoneSize);
+
+            milestoneEnter
+                .merge(milestoneSelection as any)
+                .attr("d", path)
+                .attr("transform", (d: TaskMilestoneItem) => {
+                    const y = self.getTaskYCoordinateWithLayer(task, taskConfigHeight);
+                    const centeredY = y + (barHeight - milestoneSize) / 2;
+                    const x = Gantt.TimeScale(d.date) - (milestoneSize / 4);
+                    return SVGManipulations.translate(x, centeredY);
+                })
+                .style("fill", taskMilestonesSettings.fill.value.value)
+                .style("pointer-events", "none");
+
+            // Hitbox for hover detection
+            const hitboxSelection = milestoneGroupMerged
+                .selectAll<SVGRectElement, TaskMilestoneItem>("rect.task-milestone-hitbox")
+                .data(show ? milestones : [], (d: TaskMilestoneItem, i: number) =>
+                    milestoneKeys.get(d) ?? getMilestoneKey(task, d, i)
+                );
+
+            hitboxSelection.exit().remove();
+
+            const hitboxMerged = hitboxSelection
+                .enter()
+                .append("rect")
+                .classed("task-milestone-hitbox", true)
+                .merge(hitboxSelection as any)
+                .attr("width", milestoneSize)
+                .attr("height", milestoneSize * 2)
+                .attr("x", (d: TaskMilestoneItem) => Gantt.TimeScale(d.date) - (milestoneSize / 2))
+                .attr("y", () => {
+                    const y = self.getTaskYCoordinateWithLayer(task, taskConfigHeight);
+                    return y + (barHeight - milestoneSize * 2) / 2;
+                })
+                .style("fill", "rgba(0, 0, 0, 0)")
+                .style("cursor", "pointer")
+                .style("pointer-events", "all");
+
+            const getOverlappingKeys = (hoveredNode: SVGRectElement): Set<string> => {
+                const hoveredBox = hoveredNode.getBBox();
+                const keys = new Set<string>();
+
+                hitboxMerged.each(function (milestone: TaskMilestoneItem, index: number) {
+                    const box = (this as SVGRectElement).getBBox();
+                    const overlapX = box.x <= hoveredBox.x + hoveredBox.width
+                        && box.x + box.width >= hoveredBox.x;
+                    const overlapY = box.y <= hoveredBox.y + hoveredBox.height
+                        && box.y + box.height >= hoveredBox.y;
+
+                    if (overlapX && overlapY) {
+                        const key = milestoneKeys.get(milestone) ?? getMilestoneKey(task, milestone, index);
+                        keys.add(key);
+                    }
+                });
+
+                return keys;
+            };
+
+            // Hover events to show/hide labels
+            hitboxMerged
+                .on("mouseenter", function () {
+                    const keys = getOverlappingKeys(this as SVGRectElement);
+                    setVisibleLabelsForTask(task, keys);
+                    stackLabelsForTask(task);
+                })
+                .on("mouseleave", function () {
+                    setVisibleLabelsForTask(task, new Set());
+                    stackLabelsForTask(task);
+                });
+
+            // Raise the milestone group to be above grid lines
+            milestoneGroupMerged.raise();
+
+            if (show) {
+                milestones.forEach((milestone, index) => {
+                    labelData.push({
+                        key: milestoneKeys.get(milestone) ?? getMilestoneKey(task, milestone, index),
+                        task,
+                        milestone
+                    });
+                });
+            }
+        });
+
+        const bgSelection = this.taskMilestoneLabelLayer
+            .selectAll<SVGRectElement, MilestoneLabelDatum>("rect.task-milestone-label-bg")
+            .data(labelData, (d: MilestoneLabelDatum) => d.key);
+
+        bgSelection.exit().remove();
+
+        bgSelection
+            .enter()
+            .append("rect")
+            .classed("task-milestone-label-bg", true)
+            .merge(bgSelection as any)
+            .classed("is-visible", false)
+            .style("fill", "rgba(255, 255, 255, 0.95)")
+            .style("stroke", "#ccc")
+            .style("stroke-width", 1)
+            .style("opacity", 0)
+            .style("pointer-events", "none");
+
+        const labelSelection = this.taskMilestoneLabelLayer
+            .selectAll<SVGTextElement, MilestoneLabelDatum>("text.task-milestone-label")
+            .data(labelData, (d: MilestoneLabelDatum) => d.key);
+
+        labelSelection.exit().remove();
+
+        const labelEnter = labelSelection
+            .enter()
+            .append("text")
+            .classed("task-milestone-label", true)
+            .classed("is-visible", false);  // Only set for new elements
+
+        const labelMerged = labelEnter
+            .merge(labelSelection as any)
+            .attr("x", (d: MilestoneLabelDatum) => Gantt.TimeScale(d.milestone.date) - (milestoneSize / 4))
+            .attr("y", (d: MilestoneLabelDatum) => {
+                const taskY = self.getTaskYCoordinateWithLayer(d.task, taskConfigHeight);
+                const centeredY = taskY + (barHeight - milestoneSize) / 2;
+                return centeredY - 5;
+            })
+            .attr("text-anchor", "middle")
+            .style("font-size", `${taskMilestonesSettings.labelFontSize.value}px`)
+            .style("font-family", "'Segoe UI', wf_segoe-ui_normal, helvetica, arial, sans-serif")
+            .style("font-weight", "bold")
+            .style("fill", "#000000")
+            .style("opacity", 0)
+            .style("pointer-events", "none")
+            .text((d: MilestoneLabelDatum) => {
+                const dateText = d.milestone.date ? d.milestone.date.toLocaleDateString(self.host.locale) : "";
+                return `${d.milestone.label} - ${dateText}`;
+            });
+
+        labelMerged.each(function(d: MilestoneLabelDatum) {
+            const textNode = d3Select(this);
+            const isVisible = textNode.classed("is-visible");
+            
+            // Only set initial position if not currently visible (stacking handles visible ones)
+            if (!isVisible) {
+                const bbox = (textNode.node() as SVGTextElement).getBBox();
+                const bgNode = self.taskMilestoneLabelLayer
+                    .selectAll<SVGRectElement, MilestoneLabelDatum>("rect.task-milestone-label-bg")
+                    .filter((bd: MilestoneLabelDatum) => bd.key === d.key);
+                
+                bgNode
+                    .attr("x", bbox.x - 4)
+                    .attr("y", bbox.y - 2)
+                    .attr("width", bbox.width + 8)
+                    .attr("height", bbox.height + 4)
+                    .attr("rx", 3);
+            }
+        });
+
+        // Raise all milestone layers to the top after all tasks are processed
+        taskSelection.selectAll("g.task-milestone-layer").raise();
+        this.taskMilestoneLabelLayer.raise();
     }
 
     /**
@@ -3867,6 +4509,9 @@ export class Gantt implements IVisual {
             : 0;
 
         this.chartGroup.attr("transform", SVGManipulations.translate(translateX + shiftX, margin.top));
+
+        this.taskMilestoneLabelLayer
+            .attr("transform", SVGManipulations.translate(translateX + shiftX, margin.top));
 
         const ganttDiv = this.ganttDiv.node();
         const translateY: number = Gantt.TaskLabelsMarginTop + ganttDiv.scrollTop;
