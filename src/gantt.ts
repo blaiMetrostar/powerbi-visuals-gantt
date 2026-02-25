@@ -112,7 +112,8 @@ import {
     drawRoundedRectByPath,
     hashCode,
     isStringNotNullEmptyOrUndefined,
-    isValidDate
+    isValidDate,
+    getOriginalDate
 } from "./utils";
 import { drawCollapseButton, drawExpandButton, drawMinusButton, drawPlusButton } from "./drawButtons";
 import { TextProperties } from "powerbi-visuals-utils-formattingutils/lib/src/interfaces";
@@ -1249,8 +1250,9 @@ export class Gantt implements IVisual {
                 for (let i = 0; i + 1 < parts.length; i += 2) {
                     const label = parts[i];
                     const dateText = parts[i + 1];
-                    const date = isValidDate(new Date(dateText)) ? new Date(dateText) : null;
-
+                    // Ensure original date isn't changed due to local timezone conversion
+                    const date = isValidDate(new Date(dateText)) ? getOriginalDate(new Date(dateText)) : null; 
+                    
                     if (date) {
                         milestones.push({
                             date,

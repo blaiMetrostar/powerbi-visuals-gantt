@@ -69,6 +69,14 @@ export function isValidDate(date: Date): boolean {
     return !isNaN(date.getTime());
 }
 
+export function getOriginalDate(date: Date): Date {
+    if (Object.prototype.toString.call(date) !== "[object Date]") {
+        return null;
+    }
+    
+    return new Date(date.getTime() + (date.getTimezoneOffset()*60*1000));
+}
+
 export function isStringNotNullEmptyOrUndefined(str: string) {
     const isReducableType: boolean = typeof str === "string" || typeof str === "number" || typeof str === "boolean";
     return str && isReducableType;
