@@ -841,6 +841,15 @@
                     "type": {
                         "numeric": true
                     }
+                },
+                "completionColor": {
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
                 }
             }
         },

@@ -3576,6 +3576,7 @@ export class Gantt implements IVisual {
         const taskProgressShow: boolean = this.formattingSettings.taskCompletion.show.value;
         const taskConfigHeight: number = this.formattingSettings.taskConfig.height.value || DefaultChartLineHeight;
         const barHeight = Gantt.getBarHeight(taskConfigHeight);
+        const completionColor: string = this.formattingSettings.taskCompletion.completionColor.value.value;
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         const self = this;
 
@@ -3613,7 +3614,7 @@ export class Gantt implements IVisual {
             .attr("y", (d: Task) => self.getTaskYCoordinateWithLayer(d, taskConfigHeight))
             .attr("width", 2)
             .attr("height", barHeight)
-            .style("fill", "#000000")
+            .style("fill", this.colorHelper.getHighContrastColor("foreground", completionColor))
             .style("opacity", "0.7")
             .style("display", (d: Task) => {
                 const progressPercent = self.getDaysOffTaskProgressPercent(d);

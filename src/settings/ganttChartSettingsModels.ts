@@ -127,6 +127,11 @@ export class GanttChartSettingsModel extends Model {
             return;
         }
 
+        this.taskCompletion.completionColor.value.value = colorHelper.getHighContrastColor(
+            "foreground",
+            this.taskCompletion.completionColor.value.value
+        );
+
         this.cards.forEach((card) => {
             if ((card as ISetHighContrastMode)?.setHighContrastMode) {
                 (card as ISetHighContrastMode).setHighContrastMode(colorHelper);

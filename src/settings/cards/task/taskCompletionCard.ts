@@ -5,6 +5,7 @@ import { formattingSettings } from "powerbi-visuals-utils-formattingmodel";
 import Card = formattingSettings.SimpleCard;
 import Slice = formattingSettings.Slice;
 import ToggleSwitch = formattingSettings.ToggleSwitch;
+import ColorPicker = formattingSettings.ColorPicker;
 import NumUpDown = formattingSettings.NumUpDown;
 
 import { Gantt } from "../../../gantt";
@@ -32,10 +33,16 @@ export class TaskCompletionCardSettings extends Card {
         }
     });
 
+    public completionColor = new ColorPicker({
+        name: "completionColor",
+        displayNameKey: "Visual_CompletionColor",
+        value: { value: "#00FBFF" }
+    });
+
     public topLevelSlice = this.show;
     public name: string = "taskCompletion";
     public displayNameKey: string = "Visual_TaskCompletion";
-    public slices: Slice[] = [ this.maxCompletion ];
+    public slices: Slice[] = [ this.maxCompletion, this.completionColor ];
 
     public parse(){
         if (this.maxCompletion.value < Gantt.CompletionMin || this.maxCompletion.value > Gantt.CompletionMaxInPercent) {
